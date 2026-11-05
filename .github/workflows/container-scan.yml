@@ -1,0 +1,51 @@
+name: Container Security
+on:
+  push:
+    branches: [lab4-container-security]
+  pull_request:
+    branches: [main]
+    paths: ['lab4/**', '.github/workflows/container-scan.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  security-events: write
+jobs:
+  container-scan:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Trivy
+        run: |
+          version=0.76.1
+          url=https://github.com/aquasecurity/trivy/releases/download/v$version
+          curl -fsSL "$url/trivy_${version}_Linux-64bit.tar.gz" -o trivy.tgz
+          curl -fsSL "$url/trivy_${version}_checksums.txt" -o checksums.txt
+          expected=$(awk '/trivy_.*_Linux-64bit.tar.gz$/ {print $1}' checksums.txt)
+          echo "$expected  trivy.tgz" | sha256sum -c -
+          tar -xzf trivy.tgz -C "$RUNNER_TEMP" trivy
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Build image
+        run: docker build -t lab4-app:${{ github.sha }} lab4/after
+      - name: Scan and generate reports
+        run: |
+          mkdir -p reports
+          trivy image --scanners vuln --format json \
+            --output reports/scan.json lab4-app:${{ github.sha }}
+          trivy convert --format sarif --output reports/trivy.sarif reports/scan.json
+          trivy image --format cyclonedx --scanners vuln \
+            --output reports/sbom.cdx.json lab4-app:${{ github.sha }}
+      - name: Quality Gate
+        run: |
+          trivy image --scanners vuln --severity HIGH,CRITICAL \
+            --exit-code 1 lab4-app:${{ github.sha }}
+      - name: Upload SARIF to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: reports/trivy.sarif
+          category: lab4-container
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: container-reports
+          path: reports/
