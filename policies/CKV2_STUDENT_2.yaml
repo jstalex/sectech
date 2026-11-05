@@ -1,0 +1,17 @@
+{
+  "metadata": {
+    "id": "CKV2_STUDENT_2",
+    "name": "Bucket ACL must be private",
+    "category": "GENERAL_SECURITY",
+    "severity": "HIGH"
+  },
+  "definition": {
+    "cond_type": "attribute",
+    "resource_types": [
+      "aws_s3_bucket_acl"
+    ],
+    "attribute": "acl",
+    "operator": "equals",
+    "value": "private"
+  }
+}
