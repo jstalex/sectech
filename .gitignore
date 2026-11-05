@@ -1,0 +1,6 @@
+.terraform/
+*.tfstate*
+*.binary
+tfplan.json
+reports/
+.venv/

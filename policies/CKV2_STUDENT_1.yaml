@@ -1,0 +1,18 @@
+{
+  "metadata": {
+    "id": "CKV2_STUDENT_1",
+    "name": "Environment tag is required",
+    "category": "CONVENTION",
+    "severity": "MEDIUM"
+  },
+  "definition": {
+    "cond_type": "attribute",
+    "resource_types": [
+      "aws_s3_bucket",
+      "aws_security_group",
+      "aws_iam_policy"
+    ],
+    "attribute": "tags.Environment",
+    "operator": "exists"
+  }
+}

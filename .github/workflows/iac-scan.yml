@@ -1,0 +1,49 @@
+name: IaC Security
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  iac:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.13.5'
+      - run: pip install checkov==3.4.3
+      - name: Validate and create plan
+        working-directory: after
+        env:
+          AWS_ACCESS_KEY_ID: mock_access_key
+          AWS_SECRET_ACCESS_KEY: mock_secret_key
+          AWS_EC2_METADATA_DISABLED: 'true'
+        run: |
+          terraform init -input=false -lockfile=readonly
+          terraform validate
+          terraform plan -refresh=false -input=false -out=tfplan.binary
+          terraform show -json tfplan.binary > tfplan.json
+      - name: Scan and enforce gate
+        shell: bash
+        run: |
+          mkdir -p reports
+          for mode in source plan; do
+            target=(-d after --framework terraform)
+            if [ "$mode" = plan ]; then
+              target=(-f after/tfplan.json --framework terraform_plan)
+              target+=(--repo-root-for-plan-enrichment after)
+            fi
+            rc=0
+            checkov "${target[@]}" --external-checks-dir policies \
+              --skip-download -o json > "reports/$mode.json" || rc=$?
+            if [ "$rc" -gt 1 ]; then exit "$rc"; fi
+            python export_html.py "reports/$mode.json"
+            python gate.py "reports/$mode.json"
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: checkov-reports
+          path: reports/

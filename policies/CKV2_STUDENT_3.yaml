@@ -1,0 +1,17 @@
+{
+  "metadata": {
+    "id": "CKV2_STUDENT_3",
+    "name": "S3 encryption must use KMS",
+    "category": "ENCRYPTION",
+    "severity": "HIGH"
+  },
+  "definition": {
+    "cond_type": "attribute",
+    "resource_types": [
+      "aws_s3_bucket_server_side_encryption_configuration"
+    ],
+    "attribute": "rule.*.apply_server_side_encryption_by_default.sse_algorithm",
+    "operator": "equals",
+    "value": "aws:kms"
+  }
+}
