@@ -33,7 +33,7 @@ jobs:
           hubble version
       - name: Start minikube without CNI
         run: |
-          minikube start --driver=docker --container-runtime=containerd --kubernetes-version=v1.35.0 --network-plugin=cni --cni=false --memory=4096 --cpus=2 --wait=apiserver
+          minikube start --driver=docker --container-runtime=containerd --kubernetes-version=v1.35.0 --network-plugin=cni --cni=false --force --memory=4096 --cpus=2 --wait=apiserver
       - name: Install Cilium and Hubble
         run: |
           cilium install --version 1.20.4 --set ipam.mode=kubernetes --set operator.replicas=1 --set routingMode=tunnel
