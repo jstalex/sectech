@@ -1,0 +1,21 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: api-get-users
+  namespace: demo
+spec:
+  endpointSelector:
+    matchLabels:
+      app: api
+  ingress:
+  - fromEndpoints:
+    - matchLabels:
+        app: web
+    toPorts:
+    - ports:
+      - port: '5000'
+        protocol: TCP
+      rules:
+        http:
+        - method: GET
+          path: ^/users/.*$

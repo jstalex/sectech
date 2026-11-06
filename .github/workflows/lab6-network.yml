@@ -1,0 +1,82 @@
+name: Lab6 Network Security
+on:
+  pull_request:
+    paths: ['lab6/**', '.github/workflows/lab6-network.yml']
+permissions:
+  contents: read
+jobs:
+  network-security:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Install verified tools
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p lab6/evidence /tmp/lab6-tools
+          cd /tmp/lab6-tools
+          curl -fsSLO https://github.com/kubernetes/minikube/releases/download/v1.39.0/minikube-linux-amd64
+          curl -fsSLO https://github.com/kubernetes/minikube/releases/download/v1.39.0/minikube-linux-amd64.sha256
+          echo "$(cat minikube-linux-amd64.sha256)  minikube-linux-amd64" | sha256sum -c -
+          sudo install minikube-linux-amd64 /usr/local/bin/minikube
+          curl -fsSLO https://github.com/cilium/cilium-cli/releases/download/v0.20.2/cilium-linux-amd64.tar.gz
+          curl -fsSLO https://github.com/cilium/cilium-cli/releases/download/v0.20.2/cilium-linux-amd64.tar.gz.sha256sum
+          sha256sum -c cilium-linux-amd64.tar.gz.sha256sum
+          sudo tar xzf cilium-linux-amd64.tar.gz -C /usr/local/bin cilium
+          curl -fsSLO https://github.com/cilium/hubble/releases/download/v1.20.2/hubble-linux-amd64.tar.gz
+          curl -fsSLO https://github.com/cilium/hubble/releases/download/v1.20.2/hubble-linux-amd64.tar.gz.sha256sum
+          sha256sum -c hubble-linux-amd64.tar.gz.sha256sum
+          sudo tar xzf hubble-linux-amd64.tar.gz -C /usr/local/bin hubble
+          minikube version
+          cilium version --client
+          hubble version
+      - name: Start minikube without CNI
+        run: |
+          minikube start --driver=docker --container-runtime=containerd --kubernetes-version=v1.35.0 --cni=false --memory=4096 --cpus=2 --wait=apiserver
+      - name: Install Cilium and Hubble
+        run: |
+          cilium install --version 1.20.4 --set ipam.mode=kubernetes --set operator.replicas=1 --set routingMode=tunnel
+          cilium status --wait --wait-duration 300s
+          cilium hubble enable --ui
+          kubectl -n kube-system rollout status deployment/hubble-relay --timeout=180s
+          cilium status
+          cilium hubble port-forward >lab6/evidence/hubble-forward.log 2>&1 &
+          echo $! >lab6/evidence/hubble-forward.pid
+      - name: Build demonstration image
+        run: |
+          docker build -t lab6-demo:local lab6
+          minikube image load lab6-demo:local
+      - name: 6.1 Baseline connectivity
+        run: python3 -u lab6/checks.py baseline | tee lab6/evidence/baseline.log
+      - name: 6.1 Deny all
+        run: python3 -u lab6/checks.py deny | tee lab6/evidence/deny.log
+      - name: 6.1 Allow required connections and DNS
+        run: python3 -u lab6/checks.py allow | tee lab6/evidence/allow.log
+      - name: 6.2 HTTP GET users only
+        run: python3 -u lab6/checks.py l7 | tee lab6/evidence/l7.log
+      - name: 6.2 Namespace isolation
+        run: python3 -u lab6/checks.py isolation | tee lab6/evidence/isolation.log
+      - name: 6.2 Block external traffic cluster wide
+        run: python3 -u lab6/checks.py external | tee lab6/evidence/external.log
+      - name: 6.2 Hubble traffic observation
+        run: python3 -u lab6/checks.py observe | tee lab6/evidence/hubble.log
+      - name: Save final policies and status
+        if: always()
+        run: |
+          kubectl get pods -A -o wide >lab6/evidence/pods.txt || true
+          kubectl get networkpolicy -n demo -o yaml >lab6/evidence/network-policies.yaml || true
+          kubectl get ciliumnetworkpolicy -n demo -o yaml >lab6/evidence/cilium-policies.yaml || true
+          kubectl get ciliumclusterwidenetworkpolicy -o yaml >lab6/evidence/cluster-policies.yaml || true
+          cilium status >lab6/evidence/cilium-status.txt 2>&1 || true
+      - uses: actions/upload-artifact@v7.0.2
+        if: always()
+        with:
+          name: lab6-results
+          path: lab6/evidence
+      - name: Clean up lab cluster
+        if: always()
+        run: |
+          if test -f lab6/evidence/hubble-forward.pid; then kill "$(cat lab6/evidence/hubble-forward.pid)" || true; fi
+          docker rm -f lab6-external || true
+          minikube delete
